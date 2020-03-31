@@ -83,7 +83,7 @@ namespace AssetStudioGUI
         [DllImport("gdi32.dll")]
         private static extern IntPtr AddFontMemResourceEx(IntPtr pbFont, uint cbFont, IntPtr pdv, [In] ref uint pcFonts);
 
-        public AssetStudioGUIForm()
+        public AssetStudioGUIForm(string[] args)
         {
             Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
             InitializeComponent();
@@ -98,6 +98,11 @@ namespace AssetStudioGUI
             Logger.Default = new GUILogger(StatusStripUpdate);
             Progress.Default = new GUIProgress(SetProgressBarValue);
             Studio.StatusStripUpdate = StatusStripUpdate;
+
+            if (args != null && args.Length > 0)
+            {
+                LoadFile(args[0]);
+            }
         }
 
         private async void loadFile_Click(object sender, EventArgs e)
@@ -119,6 +124,15 @@ namespace AssetStudioGUI
                 await Task.Run(() => assetsManager.LoadFolder(openFolderDialog.Folder));
                 BuildAssetStructures();
             }
+        }
+
+        private async void LoadFile(string filepath)
+        {
+            if (!File.Exists(filepath))
+                return;
+            ResetForm();
+            await Task.Run(() => assetsManager.LoadFiles(filepath));
+            BuildAssetStructures();
         }
 
         private void extractFileToolStripMenuItem_Click(object sender, EventArgs e)
