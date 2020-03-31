@@ -54,6 +54,10 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="AssetStudioFBX, Version=0.14.28.0, Culture=neutral, processorArchitecture=AMD64">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\x64\Debug\AssetStudioFBX.dll</HintPath>
+    </Reference>
     <Reference Include="dnlib">
       <HintPath>Libraries\dnlib.dll</HintPath>
     </Reference>
@@ -66,6 +70,10 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
+    <Reference Include="Texture2DDecoder, Version=0.14.28.0, Culture=neutral, processorArchitecture=AMD64">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\x64\Debug\Texture2DDecoder.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AudioClipConverter.cs" />
@@ -82,17 +90,9 @@
     <Compile Include="Texture2DExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\AssetStudioFBX\AssetStudioFBX.vcxproj">
-      <Project>{b82dd1ba-4eec-4f29-a686-03d7f0df39b8}</Project>
-      <Name>AssetStudioFBX</Name>
-    </ProjectReference>
     <ProjectReference Include="..\AssetStudio\AssetStudio.csproj">
       <Project>{7662f8c2-7bfd-442e-a948-a43b4f7eb06e}</Project>
       <Name>AssetStudio</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Texture2DDecoder\Texture2DDecoder.vcxproj">
-      <Project>{bec7b5e6-0a7b-4824-97a7-eea04d9eba29}</Project>
-      <Name>Texture2DDecoder</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
