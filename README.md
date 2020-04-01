@@ -1,3 +1,11 @@
+# 关于这个Fork
+
+* 在列表栏新增了Texture2D的信息，可以更加方便的查看贴图是否符合要求
+* 增加程序参数，可以在assetbundle文件上右键，选择打开方式，选择AssetStudio，此后可以直接双击以AssetStudio打开这种后缀的文件
+* 移除GOHierarchy这个自定义的Winform组件
+
+----
+
 # AssetStudio
 [![Build status](https://ci.appveyor.com/api/projects/status/rnu7l90422pdewx4?svg=true)](https://ci.appveyor.com/project/Perfare/assetstudio/branch/master/artifacts)
 
