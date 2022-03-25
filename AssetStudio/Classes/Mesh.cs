@@ -174,7 +174,7 @@ namespace AssetStudio
                 GetStreams(version);
             }
 
-            m_DataSize = reader.ReadBytes(reader.ReadInt32());
+            m_DataSize = reader.ReadUInt8Array();
             reader.AlignStream();
         }
 
@@ -195,7 +195,7 @@ namespace AssetStudio
                         if (m_Channel.dimension > 0)
                         {
                             chnMask |= 1u << chn;
-                            stride += m_Channel.dimension * MeshHelper.GetFormatSize(version, m_Channel.format);
+                            stride += m_Channel.dimension * MeshHelper.GetFormatSize(MeshHelper.ToVertexFormat(m_Channel.format, version));
                         }
                     }
                 }
@@ -253,7 +253,7 @@ namespace AssetStudio
                                 m_Channel.dimension = 4;
                                 break;
                         }
-                        offset += (byte)(m_Channel.dimension * MeshHelper.GetFormatSize(version, m_Channel.format));
+                        offset += (byte)(m_Channel.dimension * MeshHelper.GetFormatSize(MeshHelper.ToVertexFormat(m_Channel.format, version)));
                     }
                 }
             }
@@ -446,7 +446,7 @@ namespace AssetStudio
 
     public sealed class Mesh : NamedObject
     {
-        private bool m_Use16BitIndices = true; //3.5.0 and newer always uses 16bit indices;
+        private bool m_Use16BitIndices = true;
         public SubMesh[] m_SubMeshes;
         private uint[] m_IndexBuffer;
         public BlendShapeData m_Shapes;
@@ -550,6 +550,7 @@ namespace AssetStudio
                     ((version[0] == 2017 && version[1] == 3) && m_MeshCompression == 0))//2017.3.xfx with no compression
                 {
                     var m_IndexFormat = reader.ReadInt32();
+                    m_Use16BitIndices = m_IndexFormat == 0;
                 }
 
                 int m_IndexBuffer_size = reader.ReadInt32();
@@ -652,9 +653,9 @@ namespace AssetStudio
 
             if (version[0] >= 5) //5.0 and up
             {
-                var m_BakedConvexCollisionMesh = reader.ReadBytes(reader.ReadInt32());
+                var m_BakedConvexCollisionMesh = reader.ReadUInt8Array();
                 reader.AlignStream();
-                var m_BakedTriangleCollisionMesh = reader.ReadBytes(reader.ReadInt32());
+                var m_BakedTriangleCollisionMesh = reader.ReadUInt8Array();
                 reader.AlignStream();
             }
 
@@ -680,7 +681,7 @@ namespace AssetStudio
             {
                 if (m_VertexData.m_VertexCount > 0)
                 {
-                    var resourceReader = new ResourceReader(m_StreamData.path, assetsFile, m_StreamData.offset, (int)m_StreamData.size);
+                    var resourceReader = new ResourceReader(m_StreamData.path, assetsFile, m_StreamData.offset, m_StreamData.size);
                     m_VertexData.m_DataSize = resourceReader.GetData();
                 }
             }
@@ -710,12 +711,13 @@ namespace AssetStudio
                     var channelMask = new BitArray(new[] { (int)m_Stream.channelMask });
                     if (channelMask.Get(chn))
                     {
-                        if (version[0] < 2018 && chn == 2 && m_Channel.format == 2)
+                        if (version[0] < 2018 && chn == 2 && m_Channel.format == 2) //kShaderChannelColor && kChannelFormatColor
                         {
                             m_Channel.dimension = 4;
                         }
 
-                        var componentByteSize = (int)MeshHelper.GetFormatSize(version, m_Channel.format);
+                        var vertexFormat = MeshHelper.ToVertexFormat(m_Channel.format, version);
+                        var componentByteSize = (int)MeshHelper.GetFormatSize(vertexFormat);
                         var componentBytes = new byte[m_VertexCount * m_Channel.dimension * componentByteSize];
                         for (int v = 0; v < m_VertexCount; v++)
                         {
@@ -727,7 +729,7 @@ namespace AssetStudio
                             }
                         }
 
-                        if (reader.endian == EndianType.BigEndian && componentByteSize > 1) //swap bytes
+                        if (reader.Endian == EndianType.BigEndian && componentByteSize > 1) //swap bytes
                         {
                             for (var i = 0; i < componentBytes.Length / componentByteSize; i++)
                             {
@@ -740,10 +742,10 @@ namespace AssetStudio
 
                         int[] componentsIntArray = null;
                         float[] componentsFloatArray = null;
-                        if (MeshHelper.IsIntFormat(version, m_Channel.format))
-                            componentsIntArray = MeshHelper.BytesToIntArray(componentBytes, componentByteSize);
+                        if (MeshHelper.IsIntFormat(vertexFormat))
+                            componentsIntArray = MeshHelper.BytesToIntArray(componentBytes, vertexFormat);
                         else
-                            componentsFloatArray = MeshHelper.BytesToFloatArray(componentBytes, componentByteSize);
+                            componentsFloatArray = MeshHelper.BytesToFloatArray(componentBytes, vertexFormat);
 
                         if (version[0] >= 2018)
                         {
@@ -1160,11 +1162,36 @@ namespace AssetStudio
                     throw new ArgumentOutOfRangeException();
             }
         }
+
+        public float[] GetUV(int uv)
+        {
+            switch (uv)
+            {
+                case 0:
+                    return m_UV0;
+                case 1:
+                    return m_UV1;
+                case 2:
+                    return m_UV2;
+                case 3:
+                    return m_UV3;
+                case 4:
+                    return m_UV4;
+                case 5:
+                    return m_UV5;
+                case 6:
+                    return m_UV6;
+                case 7:
+                    return m_UV7;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
     }
 
     public static class MeshHelper
     {
-        private enum VertexChannelFormat
+        public enum VertexChannelFormat
         {
             kChannelFormatFloat,
             kChannelFormatFloat16,
@@ -1173,7 +1200,7 @@ namespace AssetStudio
             kChannelFormatUInt32
         }
 
-        private enum VertexFormat
+        public enum VertexFormat2017
         {
             kVertexFormatFloat,
             kVertexFormatFloat16,
@@ -1190,7 +1217,7 @@ namespace AssetStudio
             kVertexFormatSInt32
         }
 
-        private enum VertexFormatV2019
+        public enum VertexFormat
         {
             kVertexFormatFloat,
             kVertexFormatFloat16,
@@ -1206,147 +1233,146 @@ namespace AssetStudio
             kVertexFormatSInt32
         }
 
-        public static uint GetFormatSize(int[] version, int format)
+        public static VertexFormat ToVertexFormat(int format, int[] version)
         {
             if (version[0] < 2017)
             {
                 switch ((VertexChannelFormat)format)
                 {
                     case VertexChannelFormat.kChannelFormatFloat:
-                        return 4u;
+                        return VertexFormat.kVertexFormatFloat;
                     case VertexChannelFormat.kChannelFormatFloat16:
-                        return 2u;
+                        return VertexFormat.kVertexFormatFloat16;
                     case VertexChannelFormat.kChannelFormatColor: //in 4.x is size 4
-                        return 1u;
+                        return VertexFormat.kVertexFormatUNorm8;
                     case VertexChannelFormat.kChannelFormatByte:
-                        return 1u;
+                        return VertexFormat.kVertexFormatUInt8;
                     case VertexChannelFormat.kChannelFormatUInt32: //in 5.x
-                        return 4u;
+                        return VertexFormat.kVertexFormatUInt32;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(format), format, null);
                 }
             }
             else if (version[0] < 2019)
             {
-                switch ((VertexFormat)format)
+                switch ((VertexFormat2017)format)
+                {
+                    case VertexFormat2017.kVertexFormatFloat:
+                        return VertexFormat.kVertexFormatFloat;
+                    case VertexFormat2017.kVertexFormatFloat16:
+                        return VertexFormat.kVertexFormatFloat16;
+                    case VertexFormat2017.kVertexFormatColor:
+                    case VertexFormat2017.kVertexFormatUNorm8:
+                        return VertexFormat.kVertexFormatUNorm8;
+                    case VertexFormat2017.kVertexFormatSNorm8:
+                        return VertexFormat.kVertexFormatSNorm8;
+                    case VertexFormat2017.kVertexFormatUNorm16:
+                        return VertexFormat.kVertexFormatUNorm16;
+                    case VertexFormat2017.kVertexFormatSNorm16:
+                        return VertexFormat.kVertexFormatSNorm16;
+                    case VertexFormat2017.kVertexFormatUInt8:
+                        return VertexFormat.kVertexFormatUInt8;
+                    case VertexFormat2017.kVertexFormatSInt8:
+                        return VertexFormat.kVertexFormatSInt8;
+                    case VertexFormat2017.kVertexFormatUInt16:
+                        return VertexFormat.kVertexFormatUInt16;
+                    case VertexFormat2017.kVertexFormatSInt16:
+                        return VertexFormat.kVertexFormatSInt16;
+                    case VertexFormat2017.kVertexFormatUInt32:
+                        return VertexFormat.kVertexFormatUInt32;
+                    case VertexFormat2017.kVertexFormatSInt32:
+                        return VertexFormat.kVertexFormatSInt32;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(format), format, null);
+                }
+            }
+            else
+            {
+                return (VertexFormat)format;
+            }
+        }
+
+
+        public static uint GetFormatSize(VertexFormat format)
+        {
+            switch (format)
+            {
+                case VertexFormat.kVertexFormatFloat:
+                case VertexFormat.kVertexFormatUInt32:
+                case VertexFormat.kVertexFormatSInt32:
+                    return 4u;
+                case VertexFormat.kVertexFormatFloat16:
+                case VertexFormat.kVertexFormatUNorm16:
+                case VertexFormat.kVertexFormatSNorm16:
+                case VertexFormat.kVertexFormatUInt16:
+                case VertexFormat.kVertexFormatSInt16:
+                    return 2u;
+                case VertexFormat.kVertexFormatUNorm8:
+                case VertexFormat.kVertexFormatSNorm8:
+                case VertexFormat.kVertexFormatUInt8:
+                case VertexFormat.kVertexFormatSInt8:
+                    return 1u;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(format), format, null);
+            }
+        }
+
+        public static bool IsIntFormat(VertexFormat format)
+        {
+            return format >= VertexFormat.kVertexFormatUInt8;
+        }
+
+        public static float[] BytesToFloatArray(byte[] inputBytes, VertexFormat format)
+        {
+            var size = GetFormatSize(format);
+            var len = inputBytes.Length / size;
+            var result = new float[len];
+            for (int i = 0; i < len; i++)
+            {
+                switch (format)
                 {
                     case VertexFormat.kVertexFormatFloat:
-                        return 4u;
+                        result[i] = BitConverter.ToSingle(inputBytes, i * 4);
+                        break;
                     case VertexFormat.kVertexFormatFloat16:
-                        return 2u;
-                    case VertexFormat.kVertexFormatColor:
-                        return 1u;
+                        result[i] = Half.ToHalf(inputBytes, i * 2);
+                        break;
                     case VertexFormat.kVertexFormatUNorm8:
-                        return 1u;
+                        result[i] = inputBytes[i] / 255f;
+                        break;
                     case VertexFormat.kVertexFormatSNorm8:
-                        return 1u;
+                        result[i] = Math.Max((sbyte)inputBytes[i] / 127f, -1f);
+                        break;
                     case VertexFormat.kVertexFormatUNorm16:
-                        return 2u;
+                        result[i] = BitConverter.ToUInt16(inputBytes, i * 2) / 65535f;
+                        break;
                     case VertexFormat.kVertexFormatSNorm16:
-                        return 2u;
-                    case VertexFormat.kVertexFormatUInt8:
-                        return 1u;
-                    case VertexFormat.kVertexFormatSInt8:
-                        return 1u;
-                    case VertexFormat.kVertexFormatUInt16:
-                        return 2u;
-                    case VertexFormat.kVertexFormatSInt16:
-                        return 2u;
-                    case VertexFormat.kVertexFormatUInt32:
-                        return 4u;
-                    case VertexFormat.kVertexFormatSInt32:
-                        return 4u;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(format), format, null);
-                }
-            }
-            else
-            {
-                switch ((VertexFormatV2019)format)
-                {
-                    case VertexFormatV2019.kVertexFormatFloat:
-                        return 4u;
-                    case VertexFormatV2019.kVertexFormatFloat16:
-                        return 2u;
-                    case VertexFormatV2019.kVertexFormatUNorm8:
-                        return 1u;
-                    case VertexFormatV2019.kVertexFormatSNorm8:
-                        return 1u;
-                    case VertexFormatV2019.kVertexFormatUNorm16:
-                        return 2u;
-                    case VertexFormatV2019.kVertexFormatSNorm16:
-                        return 2u;
-                    case VertexFormatV2019.kVertexFormatUInt8:
-                        return 1u;
-                    case VertexFormatV2019.kVertexFormatSInt8:
-                        return 1u;
-                    case VertexFormatV2019.kVertexFormatUInt16:
-                        return 2u;
-                    case VertexFormatV2019.kVertexFormatSInt16:
-                        return 2u;
-                    case VertexFormatV2019.kVertexFormatUInt32:
-                        return 4u;
-                    case VertexFormatV2019.kVertexFormatSInt32:
-                        return 4u;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(format), format, null);
-                }
-            }
-        }
-
-        public static bool IsIntFormat(int[] version, int format)
-        {
-            if (version[0] < 2017)
-            {
-                return format == 4;
-            }
-            else if (version[0] < 2019)
-            {
-                return format >= 7;
-            }
-            else
-            {
-                return format >= 6;
-            }
-        }
-
-        public static float[] BytesToFloatArray(byte[] inputBytes, int size)
-        {
-            var result = new float[inputBytes.Length / size];
-            for (int i = 0; i < inputBytes.Length / size; i++)
-            {
-                var value = 0f;
-                switch (size)
-                {
-                    case 1:
-                        value = inputBytes[i] / 255.0f;
-                        break;
-                    case 2:
-                        value = Half.ToHalf(inputBytes, i * 2);
-                        break;
-                    case 4:
-                        value = BitConverter.ToSingle(inputBytes, i * 4);
+                        result[i] = Math.Max(BitConverter.ToInt16(inputBytes, i * 2) / 32767f, -1f);
                         break;
                 }
-                result[i] = value;
             }
             return result;
         }
 
-        public static int[] BytesToIntArray(byte[] inputBytes, int size)
+        public static int[] BytesToIntArray(byte[] inputBytes, VertexFormat format)
         {
-            var result = new int[inputBytes.Length / size];
-            for (int i = 0; i < inputBytes.Length / size; i++)
+            var size = GetFormatSize(format);
+            var len = inputBytes.Length / size;
+            var result = new int[len];
+            for (int i = 0; i < len; i++)
             {
-                switch (size)
+                switch (format)
                 {
-                    case 1:
+                    case VertexFormat.kVertexFormatUInt8:
+                    case VertexFormat.kVertexFormatSInt8:
                         result[i] = inputBytes[i];
                         break;
-                    case 2:
+                    case VertexFormat.kVertexFormatUInt16:
+                    case VertexFormat.kVertexFormatSInt16:
                         result[i] = BitConverter.ToInt16(inputBytes, i * 2);
                         break;
-                    case 4:
+                    case VertexFormat.kVertexFormatUInt32:
+                    case VertexFormat.kVertexFormatSInt32:
                         result[i] = BitConverter.ToInt32(inputBytes, i * 4);
                         break;
                 }

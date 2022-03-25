@@ -132,26 +132,27 @@ namespace AssetStudio
     public class ImportedMesh
     {
         public string Path { get; set; }
+        public List<ImportedVertex> VertexList { get; set; }
         public List<ImportedSubmesh> SubmeshList { get; set; }
         public List<ImportedBone> BoneList { get; set; }
         public bool hasNormal { get; set; }
-        public bool hasUV { get; set; }
+        public bool[] hasUV { get; set; }
         public bool hasTangent { get; set; }
         public bool hasColor { get; set; }
     }
 
     public class ImportedSubmesh
     {
-        public List<ImportedVertex> VertexList { get; set; }
         public List<ImportedFace> FaceList { get; set; }
         public string Material { get; set; }
+        public int BaseVertex { get; set; }
     }
 
     public class ImportedVertex
     {
         public Vector3 Vertex { get; set; }
         public Vector3 Normal { get; set; }
-        public float[] UV { get; set; }
+        public float[][] UV { get; set; }
         public Vector4 Tangent { get; set; }
         public Color Color { get; set; }
         public float[] Weights { get; set; }

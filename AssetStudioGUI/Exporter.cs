@@ -1,60 +1,39 @@
-﻿using System.Collections.Generic;
-using System.Drawing.Imaging;
+﻿using AssetStudio;
+using Newtonsoft.Json;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using AssetStudio;
-using TGASharpLib;
 
 namespace AssetStudioGUI
 {
     internal static class Exporter
     {
-        public static bool ExportTexture2D(AssetItem item, string exportPathName)
+        public static bool ExportTexture2D(AssetItem item, string exportPath)
         {
             var m_Texture2D = (Texture2D)item.Asset;
             if (Properties.Settings.Default.convertTexture)
             {
-                var bitmap = m_Texture2D.ConvertToBitmap(true);
-                if (bitmap == null)
+                var type = Properties.Settings.Default.convertType;
+                if (!TryExportFile(exportPath, item, "." + type.ToString().ToLower(), out var exportFullPath))
                     return false;
-                ImageFormat format = null;
-                var ext = Properties.Settings.Default.convertType;
-                bool tga = false;
-                switch (ext)
-                {
-                    case "BMP":
-                        format = ImageFormat.Bmp;
-                        break;
-                    case "PNG":
-                        format = ImageFormat.Png;
-                        break;
-                    case "JPEG":
-                        format = ImageFormat.Jpeg;
-                        break;
-                    case "TGA":
-                        tga = true;
-                        break;
-                }
-                var exportFullName = exportPathName + item.Text + "." + ext.ToLower();
-                if (ExportFileExists(exportFullName))
+                var image = m_Texture2D.ConvertToImage(true);
+                if (image == null)
                     return false;
-                if (tga)
+                using (image)
                 {
-                    var file = new TGA(bitmap);
-                    file.Save(exportFullName);
+                    using (var file = File.OpenWrite(exportFullPath))
+                    {
+                        image.WriteToStream(file, type);
+                    }
+                    return true;
                 }
-                else
-                    bitmap.Save(exportFullName, format);
-                bitmap.Dispose();
-                return true;
             }
             else
             {
-                var exportFullName = exportPathName + item.Text + ".tex";
-                if (ExportFileExists(exportFullName))
+                if (!TryExportFile(exportPath, item, ".tex", out var exportFullPath))
                     return false;
-                File.WriteAllBytes(exportFullName, m_Texture2D.image_data.GetData());
+                File.WriteAllBytes(exportFullPath, m_Texture2D.image_data.GetData());
                 return true;
             }
         }
@@ -66,46 +45,31 @@ namespace AssetStudioGUI
             if (m_AudioData == null || m_AudioData.Length == 0)
                 return false;
             var converter = new AudioClipConverter(m_AudioClip);
-            if (Properties.Settings.Default.convertAudio && converter.IsFMODSupport)
+            if (Properties.Settings.Default.convertAudio && converter.IsSupport)
             {
-                var exportFullName = exportPath + item.Text + ".wav";
-                if (ExportFileExists(exportFullName))
+                if (!TryExportFile(exportPath, item, ".wav", out var exportFullPath))
                     return false;
                 var buffer = converter.ConvertToWav();
                 if (buffer == null)
                     return false;
-                File.WriteAllBytes(exportFullName, buffer);
+                File.WriteAllBytes(exportFullPath, buffer);
             }
             else
             {
-                var exportFullName = exportPath + item.Text + converter.GetExtensionName();
-                if (ExportFileExists(exportFullName))
+                if (!TryExportFile(exportPath, item, converter.GetExtensionName(), out var exportFullPath))
                     return false;
-                File.WriteAllBytes(exportFullName, m_AudioData);
+                File.WriteAllBytes(exportFullPath, m_AudioData);
             }
             return true;
         }
 
         public static bool ExportShader(AssetItem item, string exportPath)
         {
-            var exportFullName = exportPath + item.Text + ".shader";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".shader", out var exportFullPath))
                 return false;
             var m_Shader = (Shader)item.Asset;
-            if (m_Shader.compressedBlob != null) //5.5 and up
-            {
-                var strs = ShaderConverter.ConvertMultiple(m_Shader);
-                for (int i = 0; i < strs.Length; i++)
-                {
-                    var platformName = ShaderConverter.GetPlatformString(m_Shader.platforms[i]);
-                    File.WriteAllText($"{exportPath}{item.Text}_{platformName}.shader", strs[i]);
-                }
-            }
-            else
-            {
-                var str = ShaderConverter.Convert(m_Shader);
-                File.WriteAllText(exportFullName, str);
-            }
+            var str = m_Shader.Convert();
+            File.WriteAllText(exportFullPath, str);
             return true;
         }
 
@@ -120,21 +84,25 @@ namespace AssetStudioGUI
                     extension = Path.GetExtension(item.Container);
                 }
             }
-            var exportFullName = exportPath + item.Text + extension;
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, extension, out var exportFullPath))
                 return false;
-            File.WriteAllBytes(exportFullName, m_TextAsset.m_Script);
+            File.WriteAllBytes(exportFullPath, m_TextAsset.m_Script);
             return true;
         }
 
         public static bool ExportMonoBehaviour(AssetItem item, string exportPath)
         {
-            var exportFullName = exportPath + item.Text + ".txt";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".json", out var exportFullPath))
                 return false;
             var m_MonoBehaviour = (MonoBehaviour)item.Asset;
-            var str = m_MonoBehaviour.Dump() ?? Studio.GetScriptString(item.Asset.reader);
-            File.WriteAllText(exportFullName, str);
+            var type = m_MonoBehaviour.ToType();
+            if (type == null)
+            {
+                var m_Type = Studio.MonoBehaviourToTypeTree(m_MonoBehaviour);
+                type = m_MonoBehaviour.ToType(m_Type);
+            }
+            var str = JsonConvert.SerializeObject(type, Formatting.Indented);
+            File.WriteAllText(exportFullPath, str);
             return true;
         }
 
@@ -148,10 +116,9 @@ namespace AssetStudioGUI
                 {
                     extension = ".otf";
                 }
-                var exportFullName = exportPath + item.Text + extension;
-                if (ExportFileExists(exportFullName))
+                if (!TryExportFile(exportPath, item, extension, out var exportFullPath))
                     return false;
-                File.WriteAllBytes(exportFullName, m_Font.m_FontData);
+                File.WriteAllBytes(exportFullPath, m_Font.m_FontData);
                 return true;
             }
             return false;
@@ -162,8 +129,7 @@ namespace AssetStudioGUI
             var m_Mesh = (Mesh)item.Asset;
             if (m_Mesh.m_VertexCount <= 0)
                 return false;
-            var exportFullName = exportPath + item.Text + ".obj";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".obj", out var exportFullPath))
                 return false;
             var sb = new StringBuilder();
             sb.AppendLine("g " + m_Mesh.m_Name);
@@ -186,6 +152,7 @@ namespace AssetStudioGUI
             #region UV
             if (m_Mesh.m_UV0?.Length > 0)
             {
+                c = 4;
                 if (m_Mesh.m_UV0.Length == m_Mesh.m_VertexCount * 2)
                 {
                     c = 2;
@@ -235,20 +202,18 @@ namespace AssetStudioGUI
             #endregion
 
             sb.Replace("NaN", "0");
-            File.WriteAllText(exportFullName, sb.ToString());
+            File.WriteAllText(exportFullPath, sb.ToString());
             return true;
         }
 
         public static bool ExportVideoClip(AssetItem item, string exportPath)
         {
             var m_VideoClip = (VideoClip)item.Asset;
-            var m_VideoData = m_VideoClip.m_VideoData.GetData();
-            if (m_VideoData != null && m_VideoData.Length != 0)
+            if (m_VideoClip.m_ExternalResources.m_Size > 0)
             {
-                var exportFullName = exportPath + item.Text + Path.GetExtension(m_VideoClip.m_OriginalPath);
-                if (ExportFileExists(exportFullName))
+                if (!TryExportFile(exportPath, item, Path.GetExtension(m_VideoClip.m_OriginalPath), out var exportFullPath))
                     return false;
-                File.WriteAllBytes(exportFullName, m_VideoData);
+                m_VideoClip.m_VideoData.WriteData(exportFullPath);
                 return true;
             }
             return false;
@@ -257,91 +222,88 @@ namespace AssetStudioGUI
         public static bool ExportMovieTexture(AssetItem item, string exportPath)
         {
             var m_MovieTexture = (MovieTexture)item.Asset;
-            var exportFullName = exportPath + item.Text + ".ogv";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".ogv", out var exportFullPath))
                 return false;
-            File.WriteAllBytes(exportFullName, m_MovieTexture.m_MovieData);
+            File.WriteAllBytes(exportFullPath, m_MovieTexture.m_MovieData);
             return true;
         }
 
         public static bool ExportSprite(AssetItem item, string exportPath)
         {
-            ImageFormat format = null;
             var type = Properties.Settings.Default.convertType;
-            bool tga = false;
-            switch (type)
-            {
-                case "BMP":
-                    format = ImageFormat.Bmp;
-                    break;
-                case "PNG":
-                    format = ImageFormat.Png;
-                    break;
-                case "JPEG":
-                    format = ImageFormat.Jpeg;
-                    break;
-                case "TGA":
-                    tga = true;
-                    break;
-            }
-            var exportFullName = exportPath + item.Text + "." + type.ToLower();
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, "." + type.ToString().ToLower(), out var exportFullPath))
                 return false;
-            var bitmap = SpriteHelper.GetImageFromSprite((Sprite)item.Asset);
-            if (bitmap != null)
+            var image = ((Sprite)item.Asset).GetImage();
+            if (image != null)
             {
-                if (tga)
+                using (image)
                 {
-                    var file = new TGA(bitmap);
-                    file.Save(exportFullName);
+                    using (var file = File.OpenWrite(exportFullPath))
+                    {
+                        image.WriteToStream(file, type);
+                    }
+                    return true;
                 }
-                else
-                    bitmap.Save(exportFullName, format);
-                bitmap.Dispose();
-                return true;
             }
             return false;
         }
 
         public static bool ExportRawFile(AssetItem item, string exportPath)
         {
-            var exportFullName = exportPath + item.Text + ".dat";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".dat", out var exportFullPath))
                 return false;
-            File.WriteAllBytes(exportFullName, item.Asset.GetRawData());
+            File.WriteAllBytes(exportFullPath, item.Asset.GetRawData());
             return true;
         }
 
-        private static bool ExportFileExists(string filename)
+        private static bool TryExportFile(string dir, AssetItem item, string extension, out string fullPath)
         {
-            if (File.Exists(filename))
+            var fileName = FixFileName(item.Text);
+            fullPath = Path.Combine(dir, fileName + extension);
+            if (!File.Exists(fullPath))
             {
+                Directory.CreateDirectory(dir);
                 return true;
             }
-            Directory.CreateDirectory(Path.GetDirectoryName(filename));
+            fullPath = Path.Combine(dir, fileName + item.UniqueID + extension);
+            if (!File.Exists(fullPath))
+            {
+                Directory.CreateDirectory(dir);
+                return true;
+            }
             return false;
         }
 
         public static bool ExportAnimator(AssetItem item, string exportPath, List<AssetItem> animationList = null)
         {
+            var exportFullPath = Path.Combine(exportPath, item.Text, item.Text + ".fbx");
+            if (File.Exists(exportFullPath))
+            {
+                exportFullPath = Path.Combine(exportPath, item.Text + item.UniqueID, item.Text + ".fbx");
+            }
             var m_Animator = (Animator)item.Asset;
-            var convert = animationList != null ? new ModelConverter(m_Animator, animationList.Select(x => (AnimationClip)x.Asset).ToArray()) : new ModelConverter(m_Animator);
-            exportPath = $"{exportPath}{item.Text}\\{item.Text}.fbx";
-            ExportFbx(convert, exportPath);
+            var convert = animationList != null
+                ? new ModelConverter(m_Animator, Properties.Settings.Default.convertType, animationList.Select(x => (AnimationClip)x.Asset).ToArray())
+                : new ModelConverter(m_Animator, Properties.Settings.Default.convertType);
+            ExportFbx(convert, exportFullPath);
             return true;
         }
 
         public static void ExportGameObject(GameObject gameObject, string exportPath, List<AssetItem> animationList = null)
         {
-            var convert = animationList != null ? new ModelConverter(gameObject, animationList.Select(x => (AnimationClip)x.Asset).ToArray()) : new ModelConverter(gameObject);
-            exportPath = exportPath + Studio.FixFileName(gameObject.m_Name) + ".fbx";
+            var convert = animationList != null
+                ? new ModelConverter(gameObject, Properties.Settings.Default.convertType, animationList.Select(x => (AnimationClip)x.Asset).ToArray())
+                : new ModelConverter(gameObject, Properties.Settings.Default.convertType);
+            exportPath = exportPath + FixFileName(gameObject.m_Name) + ".fbx";
             ExportFbx(convert, exportPath);
         }
 
         public static void ExportGameObjectMerge(List<GameObject> gameObject, string exportPath, List<AssetItem> animationList = null)
         {
             var rootName = Path.GetFileNameWithoutExtension(exportPath);
-            var convert = animationList != null ? new ModelConverter(rootName, gameObject, animationList.Select(x => (AnimationClip)x.Asset).ToArray()) : new ModelConverter(rootName, gameObject);
+            var convert = animationList != null
+                ? new ModelConverter(rootName, gameObject, Properties.Settings.Default.convertType, animationList.Select(x => (AnimationClip)x.Asset).ToArray())
+                : new ModelConverter(rootName, gameObject, Properties.Settings.Default.convertType);
             ExportFbx(convert, exportPath);
         }
 
@@ -355,22 +317,27 @@ namespace AssetStudioGUI
             var exportBlendShape = Properties.Settings.Default.exportBlendShape;
             var castToBone = Properties.Settings.Default.castToBone;
             var boneSize = (int)Properties.Settings.Default.boneSize;
+            var exportAllUvsAsDiffuseMaps = Properties.Settings.Default.exportAllUvsAsDiffuseMaps;
             var scaleFactor = (float)Properties.Settings.Default.scaleFactor;
             var fbxVersion = Properties.Settings.Default.fbxVersion;
             var fbxFormat = Properties.Settings.Default.fbxFormat;
             ModelExporter.ExportFbx(exportPath, convert, eulerFilter, filterPrecision,
-                exportAllNodes, exportSkins, exportAnimations, exportBlendShape, castToBone, boneSize, scaleFactor, fbxVersion, fbxFormat == 1);
+                exportAllNodes, exportSkins, exportAnimations, exportBlendShape, castToBone, boneSize, exportAllUvsAsDiffuseMaps, scaleFactor, fbxVersion, fbxFormat == 1);
         }
 
         public static bool ExportDumpFile(AssetItem item, string exportPath)
         {
-            var exportFullName = exportPath + item.Text + ".txt";
-            if (ExportFileExists(exportFullName))
+            if (!TryExportFile(exportPath, item, ".txt", out var exportFullPath))
                 return false;
             var str = item.Asset.Dump();
+            if (str == null && item.Asset is MonoBehaviour m_MonoBehaviour)
+            {
+                var m_Type = Studio.MonoBehaviourToTypeTree(m_MonoBehaviour);
+                str = m_MonoBehaviour.Dump(m_Type);
+            }
             if (str != null)
             {
-                File.WriteAllText(exportFullName, str);
+                File.WriteAllText(exportFullPath, str);
                 return true;
             }
             return false;
@@ -407,6 +374,12 @@ namespace AssetStudioGUI
                 default:
                     return ExportRawFile(item, exportPath);
             }
+        }
+
+        public static string FixFileName(string str)
+        {
+            if (str.Length >= 260) return Path.GetRandomFileName();
+            return Path.GetInvalidFileNameChars().Aggregate(str, (current, c) => current.Replace(c, '_'));
         }
     }
 }

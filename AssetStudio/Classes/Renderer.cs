@@ -43,12 +43,20 @@ namespace AssetStudio
                     {
                         var m_DynamicOccludee = reader.ReadByte();
                     }
+                    if (version[0] >= 2021) //2021.1 and up
+                    {
+                        var m_StaticShadowCaster = reader.ReadByte();
+                    }
                     var m_MotionVectors = reader.ReadByte();
                     var m_LightProbeUsage = reader.ReadByte();
                     var m_ReflectionProbeUsage = reader.ReadByte();
                     if (version[0] > 2019 || (version[0] == 2019 && version[1] >= 3)) //2019.3 and up
                     {
                         var m_RayTracingMode = reader.ReadByte();
+                    }
+                    if (version[0] >= 2020) //2020.1 and up
+                    {
+                        var m_RayTraceProcedural = reader.ReadByte();
                     }
                     reader.AlignStream();
                 }
